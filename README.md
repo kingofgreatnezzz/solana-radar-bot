@@ -1,50 +1,70 @@
 # 🚨 Solana Radar Bot
 
-A Telegram bot that monitors Solana's trending tokens every 15 minutes and alerts subscribers — with automatic safety scoring to filter out dangerous tokens.
+> Built in one night by a Nigerian developer learning Solana.  
+> Powered by Birdeye Data API + Claude AI.
 
-Built by [@kingofgreatness](https://twitter.com/kingofgreatnezz) 🇳🇬  
-Powered by [Birdeye Data API](https://bds.birdeye.so) #BirdeyeAPI
+**The problem:** African crypto traders get rugged constantly. They see a token trending on Twitter — but by the time they check if it's safe, it's too late. They need real-time safety intelligence, not just price data.
+
+**The solution:** A Telegram bot that monitors trending Solana tokens every 15 minutes, automatically filters dangerous ones, and uses AI to explain WHY a token is trending — not just that it is.
 
 ---
 
-## What it does
+## What makes this different
 
-- Monitors `/defi/token_trending` every 15 minutes via Birdeye API
-- For each new trending token, checks `/defi/token_security` for safety
-- Automatically **filters out AVOID-rated tokens** to protect users
-- Sends Telegram alerts with: price, 24h change, volume, liquidity, safety rating
-- Users can subscribe/unsubscribe via Telegram commands
+Most alert bots just say "this token is trending." This bot says:
 
-## Safety Rating System
+> *"$BONK is trending because volume spiked 340% in 2 hours while price only moved 12% — suggesting accumulation rather than a pump. The contract has no mint authority and top 10 holders control only 31% — relatively safe distribution."*
 
-| Rating | Label | Meaning |
-|--------|-------|---------|
-| 🟢 | SAFE | Clean contract, no red flags |
-| 🟡 | CAUTION | Minor flags, proceed with care |
-| 🟠 | RISKY | Multiple red flags |
-| 🔴 | AVOID | Dangerous — filtered out automatically |
+That's the `/why` command. Powered by Claude AI. No other Solana bot does this.
 
-## Birdeye API Endpoints Used
-
-- `GET /defi/token_trending` — fetch trending tokens
-- `GET /defi/token_security` — fetch safety data per token
+---
 
 ## Commands
 
-| Command | Action |
-|---------|--------|
-| `/start` | Subscribe to alerts |
+| Command | What it does |
+|---------|-------------|
+| `/start` | Subscribe to live alerts |
 | `/stop` | Unsubscribe |
-| `/trending` | View top 10 trending tokens now |
+| `/trending` | Top 10 trending tokens RIGHT NOW with safety scores |
+| `/new` | Brand new token listings — safety filtered |
+| `/why SYMBOL` | AI explains why a token is trending |
 | `/stats` | Bot statistics |
+
+---
+
+## Safety Rating System
+
+| Rating | Label | What it means |
+|--------|-------|--------------|
+| 🟢 | SAFE | Clean contract, healthy distribution |
+| 🟡 | CAUTION | Minor flags, proceed carefully |
+| 🟠 | RISKY | Multiple red flags |
+| 🔴 | AVOID | Dangerous — filtered out automatically, never shown |
+
+Red flags checked: mint authority, freeze authority, top 10 holder concentration, creator percentage.
+
+---
+
+## Birdeye API Endpoints Used
+
+- `GET /defi/token_trending` — fetch top trending tokens every 15 minutes
+- `GET /defi/v2/tokens/new_listing` — fetch brand new token listings
+- `GET /defi/token_security` — safety analysis per token
+- `GET /defi/token_overview` — detailed token data for AI analysis
+
+---
 
 ## Tech Stack
 
-- Python 3.11+
-- `python-telegram-bot` — Telegram interface
-- `httpx` — async API calls to Birdeye
-- `apscheduler` — 15-minute interval scheduling
-- Deployed on Railway (free tier)
+| Tool | Purpose |
+|------|---------|
+| Python 3.10+ | Core language |
+| python-telegram-bot | Telegram interface |
+| httpx | Async API calls to Birdeye |
+| anthropic SDK | Claude AI for /why analysis |
+| asyncio | Background alert loop (no extra dependencies) |
+
+---
 
 ## Setup
 
@@ -52,19 +72,29 @@ Powered by [Birdeye Data API](https://bds.birdeye.so) #BirdeyeAPI
 git clone https://github.com/YOUR_USERNAME/solana-radar-bot
 cd solana-radar-bot
 pip install -r requirements.txt
+```
+
+Add your keys in `bot.py`:
+```python
+BIRDEYE_API_KEY    = "your_birdeye_key"
+TELEGRAM_BOT_TOKEN = "your_telegram_token"
+ANTHROPIC_API_KEY  = "your_anthropic_key"
+```
+
+Then run:
+```bash
 python bot.py
-```
-
-## Environment Variables (for production)
-
-Replace the keys in `bot.py` with environment variables:
-```
-BIRDEYE_API_KEY=your_key_here
-TELEGRAM_BOT_TOKEN=your_token_here
 ```
 
 ---
 
-*Built for the Birdeye Data BIP Competition — Sprint 2*  
-*April 2026*
-"# solana-radar-bot" 
+## Built for the Birdeye BIP Competition — Sprint 2
+
+April 2026 | by [@kingofgreatness](https://twitter.com/kingofgreatnezz) 🇳🇬
+
+*This is my first Solana project. Built from zero in 48 hours.*  
+*Because African crypto traders deserve the same tools as everyone else.*
+
+---
+
+`#BirdeyeAPI` `#Solana` `#BuildInPublic`
