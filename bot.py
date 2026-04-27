@@ -17,7 +17,7 @@ CHECK_INTERVAL = 900   # 15 minutes
 
 # ============================================================
 # STORAGE
-# ============================================================
+# =================================
 subscribers  = set()
 seen_tokens  = set()
 alert_count  = 0
@@ -25,7 +25,7 @@ alert_count  = 0
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ============================================================
+# ========================================
 # BIRDEYE — TRENDING
 # ============================================================
 async def get_trending_tokens():
@@ -44,7 +44,8 @@ async def get_trending_tokens():
 
 # ============================================================
 # BIRDEYE — NEW LISTINGS
-# ============================================================
+
+#==============================
 async def get_new_listings():
     url     = "https://public-api.birdeye.so/defi/v2/tokens/new_listing"
     headers = {"X-API-KEY": BIRDEYE_API_KEY, "x-chain": "solana"}
@@ -61,7 +62,7 @@ async def get_new_listings():
 
 # ============================================================
 # BIRDEYE — SECURITY
-# ============================================================
+# ===========================================
 async def get_token_security(address: str):
     url     = "https://public-api.birdeye.so/defi/token_security"
     headers = {"X-API-KEY": BIRDEYE_API_KEY, "x-chain": "solana"}
@@ -78,7 +79,7 @@ async def get_token_security(address: str):
 
 # ============================================================
 # BIRDEYE — TOKEN OVERVIEW (for /why command)
-# ============================================================
+# ===========================================
 async def get_token_overview(address: str):
     url     = "https://public-api.birdeye.so/defi/token_overview"
     headers = {"X-API-KEY": BIRDEYE_API_KEY, "x-chain": "solana"}
@@ -94,8 +95,8 @@ async def get_token_overview(address: str):
     return {}
 
 # ============================================================
-# SAFETY RATING
-# ==========================================================
+# SAFETY RATINGs 
+# ============================================================
 def calculate_safety_rating(sec):
     if not sec: return "⚪", "UNKNOWN"
     flags = 0
@@ -108,7 +109,7 @@ def calculate_safety_rating(sec):
     elif flags <= 3:  return "🟠", "RISKY"
     else:             return "🔴", "AVOID"
 
-# =======================================================
+# ============================================================
 # HELPERS
 # ============================================================
 def fmt_num(n):
@@ -128,7 +129,7 @@ def fmt_price(p):
 
 # ============================================================
 # CLAUDE AI — WHY IS THIS TOKEN TRENDING?
-
+# ============================================================
 async def ask_claude_why(name, symbol, price, price_change, volume, liquidity,
                           holders, security_label):
     """Use Claude to explain in plain English why a token is trending"""
@@ -159,14 +160,58 @@ Give your analysis in this format:
         )
         return message.content[0].text
 
+    except anthropic.RateLimitError:
+        logger.error("Claude rate limit hit")
+        return None, "rate_limit"
+
+    except anthropic.APIStatusError as e:
+        # Covers 529 overloaded, 402 out of credits, etc.
+        status = e.status_code
+        logger.error(f"Claude API status error: {status}")
+        if status in (402, 429, 529):
+            return None, "quota"
+        return None, "error"
+
     except Exception as e:
         logger.error(f"Claude error: {e}")
-        return "🧠 AI analysis unavailable right now. Check the data above manually."
+        return None, "error"
+
+
+def get_fallback_message(symbol: str, error_type: str, price, chg_str,
+                          vol, liq, emoji, label) -> str:
+    """Returns a funny, honest fallback when Claude AI is unavailable"""
+
+    if error_type == "quota":
+        ai_section = (
+            f"😭 *AI Analysis: Temporarily Unavailable*\n\n"
+            f"Sooo... turns out a LOT of you tested this bot 👀\n"
+            f"Like, a suspicious amount. An impressive amount.\n"
+            f"We ran out of AI tokens faster than ${symbol} ran out of sellers 📈\n\n"
+            f"The AI brain is currently on timeout — touched by so many users "
+            f"it needed a nap 😴\n\n"
+            f"Normal service resumes soon. You lot broke it. I'm proud of you. 🇳🇬"
+        )
+    elif error_type == "rate_limit":
+        ai_section = (
+            f"😅 *AI Analysis: Too Popular Right Now*\n\n"
+            f"The AI is getting too many questions at once — "
+            f"apparently everyone wants to know about ${symbol} simultaneously 😂\n\n"
+            f"Take a breath, wait 30 seconds, try `/why {symbol}` again.\n"
+            f"The AI isn't gone — just overwhelmed. Like me on a Monday. 😭"
+        )
+    else:
+        ai_section = (
+            f"🤖 *AI Analysis: Taking a Quick Break*\n\n"
+            f"The AI went for a walk and hasn't come back yet 🚶\n"
+            f"Either that or it saw ${symbol}'s chart and got scared.\n\n"
+            f"Try `/why {symbol}` again in a minute. It'll be back. Probably. 🤞"
+        )
+
+    return ai_section
 
 # ============================================================
-# ALERT LOOP — runs every 15 minutes
-#========
-
+# ALERT LOOP — runs every 15 minutes only :000
+# ============================================================
 async def alert_loop(bot: Bot):
     global alert_count
     logger.info("Alert loop started — checking every 15 minutes")
@@ -247,6 +292,7 @@ async def alert_loop(bot: Bot):
 
 # ============================================================
 # COMMANDS
+# ============================================================
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     subscribers.add(update.effective_chat.id)
@@ -318,7 +364,7 @@ async def cmd_new(update: Update, context: ContextTypes.DEFAULT_TYPE):
         emoji, label = calculate_safety_rating(sec)
 
         if label == "AVOID":
-            continue   # filter dangerous ones
+            continue   # filter dangerous ones incase of rug pulls :) lol
 
         link = f"https://birdeye.so/token/{address}?chain=solana"
         msg += (
@@ -378,7 +424,7 @@ async def cmd_why(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chg_str = (f"+{chg:.1f}%" if chg > 0 else f"{chg:.1f}%") if chg else "N/A"
 
     # Get AI analysis
-    ai_analysis = await ask_claude_why(
+    result = await ask_claude_why(
         name, symbol_query,
         fmt_price(price), chg_str,
         fmt_num(vol), fmt_num(liq),
@@ -387,17 +433,40 @@ async def cmd_why(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     link = f"https://birdeye.so/token/{address}?chain=solana"
 
-    msg = (
-        f"🔬 *AI Analysis: ${symbol_query}*\n\n"
-        f"Safety: {emoji} *{label}*\n"
-        f"Price: `{fmt_price(price)}` | 24h: `{chg_str}`\n"
-        f"Volume: `{fmt_num(vol)}` | Liquidity: `{fmt_num(liq)}`\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"{ai_analysis}\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"🔗 [View on Birdeye]({link})\n\n"
-        f"_AI by Claude | Data by #BirdeyeAPI | @kingofgreatness 🇳🇬_"
-    )
+    # Handle success vs fallback
+    if isinstance(result, tuple):
+        # Error occurred — result is (None, error_type)
+        _, error_type = result
+        ai_section = get_fallback_message(
+            symbol_query, error_type,
+            fmt_price(price), chg_str,
+            fmt_num(vol), fmt_num(liq),
+            emoji, label
+        )
+        msg = (
+            f"🔬 *${symbol_query} — Token Data*\n\n"
+            f"Safety: {emoji} *{label}*\n"
+            f"Price: `{fmt_price(price)}` | 24h: `{chg_str}`\n"
+            f"Volume: `{fmt_num(vol)}` | Liquidity: `{fmt_num(liq)}`\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"{ai_section}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"🔗 [View on Birdeye]({link})\n\n"
+            f"_Data by #BirdeyeAPI | @kingofgreatness 🇳🇬_"
+        )
+    else:
+        # Success — result is the AI text
+        msg = (
+            f"🔬 *AI Analysis: ${symbol_query}*\n\n"
+            f"Safety: {emoji} *{label}*\n"
+            f"Price: `{fmt_price(price)}` | 24h: `{chg_str}`\n"
+            f"Volume: `{fmt_num(vol)}` | Liquidity: `{fmt_num(liq)}`\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"{result}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"🔗 [View on Birdeye]({link})\n\n"
+            f"_AI by Claude | Data by #BirdeyeAPI | @kingofgreatness 🇳🇬_"
+        )
 
     await update.message.reply_text(msg,
         parse_mode="Markdown",
@@ -416,9 +485,9 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# ============================================================
-# MAIN ;]
-# ====================================
+# ============================================
+# MAIN 
+# ============================================
 async def main():
     logger.info("🚀 Solana Radar Bot starting...")
 
